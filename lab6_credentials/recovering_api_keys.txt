@@ -1,0 +1,2 @@
+| rest splunk_server=local "/servicesNS/-/<app_name>/storage/passwords" 
+| table username,clear_password,title
