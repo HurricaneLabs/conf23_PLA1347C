@@ -1,0 +1,29 @@
+| rest /services/server/info splunk_server=* 
+| eval role=if(server_roles="indexer","indexer","not indexer") 
+| fields splunk_server role 
+| join type=inner max=0 splunk_server 
+    [ rest /services/admin/indexes 
+    | fields splunk_server title disabled coldToFrozenDir coldToFrozenScript frozenTimePeriodInSecs maxHotSpanSecs maxDataSize homePath coldPath maxHotBuckets maxWarmDBCount maxTotalDataSizeMB ] 
+| eval frozen_configured=case(len(coldToFrozenDir)>0,coldToFrozenDir,len(coldToFrozenScript)>0,coldToFrozenScript,1=1,"Delete") 
+| eval ayear = floor(frozenTimePeriodInSecs/86400/365) 
+| eval aday = (frozenTimePeriodInSecs/86400) % 365 
+| eval ret = ayear . " years, " . aday . " days" 
+| eval hyear = floor(maxHotSpanSecs/86400/365) 
+| eval hday = (maxHotSpanSecs/86400) % 365 
+| eval hotret = hyear . " years, " . hday . " days" 
+| eval idxdisabled=if(disabled == 0, "False", "True") 
+| eval hotdbmax=case(maxDataSize == "auto", "750", maxDataSize == "auto_high_volume", "10240", isint(maxDataSize), maxDataSize) 
+| rex mode=sed field=homePath "s#[/\\\\].*##" 
+| rex mode=sed field=coldPath "s#[/\\\\].*##" 
+| sort role 
+| streamstats dc(role) as rolecount by title 
+| eval keep=if(rolecount=1 AND role="not indexer",1,0) 
+| search (keep=1 OR role=indexer) NOT (title=splunklogger AND idxdisabled="True") 
+| join type=left 
+    [ eventcount summarize=f index=_* index=* 
+    | stats sum(count) as count by index, server 
+    | rename index as title server as splunk_server] 
+| sort splunk_server 
+| stats list(splunk_server) AS Indexer list(idxdisabled) AS Disabled list(homePath) as homeVolume list(coldPath) as coldVolume list(hotret) AS maxHotSpanSecs list(hotdbmax) AS maxDataSize list(maxHotBuckets) AS MaxHotBuckets list(maxWarmDBCount) AS MaxWarmDBCount list(ret) AS Archive list(maxTotalDataSizeMB) AS MaxTotalDataSizeMB list(frozen_configured) as frozen_configured list(count) as count by title 
+| rename title AS Index, maxHotSpanSecs AS "Max Bucket Time", MaxHotBuckets AS "Max Hot Buckets", maxDataSize AS "Max Bucket Size (MB)", MaxWarmDBCount AS "Max Warm Buckets", Archive AS "Archive Time", MaxTotalDataSizeMB AS "Max Total Data Size (MB)" frozen_configured as "Cold To Frozen" 
+| sort Indexer

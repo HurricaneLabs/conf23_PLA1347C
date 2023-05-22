@@ -1,0 +1,1 @@
+| rest /servicesNS/-/-/saved/searches splunk_server=local | table title, author, allow_skew, is_scheduled, search

@@ -1,0 +1,30 @@
+index=_internal sourcetype=scheduler status!=queued earliest=-30d@d savedsearch_name!="Bucket Copy Trigger" 
+| eval is_realtime=if(searchmatch("sid=rt* OR concurrency_category=real-time_scheduled"),"yes","no") 
+| fields run_time is_realtime savedsearch_name user 
+| stats avg(run_time) as average_run_time max(run_time) as max_run_time min(run_time) as min_run_time max(is_realtime) as is_realtime by savedsearch_name user 
+| eval average_run_time = average_run_time/60 
+| eval min_run_time = min_run_time/60 
+| eval max_run_time = max_run_time/60 
+| sort - average_run_time 
+| join savedsearch_name 
+    [| rest /servicesNS/-/-/saved/searches splunk_server=local 
+    | search is_scheduled=1 
+    | rename title AS savedsearch_name 
+    | rename eai:acl.app as title 
+    | table splunk_server title savedsearch_name cron_schedule search schedule_window ] 
+| join savedsearch_name 
+    [| search index=_introspection sourcetype=splunk_resource_usage data.search_props.sid::* data.search_props.role=head 
+    | eval sid = 'data.search_props.sid' 
+    | eval mem_used = 'data.mem_used' 
+    | eval mem = 'data.mem' 
+    | eval pct_memory = 'data.pct_memory' 
+    | eval app = 'data.search_props.app' 
+    | eval savedsearch_name = 'data.search_props.label' 
+    | eval role = 'data.search_props.role' 
+    | eval splunk_server = 'data.search_props.search_head' 
+    | eval mem_used = round(mem_used, 2) 
+    | stats max(mem_used) as max_mem_used avg(mem_used) as avg_mem_used by savedsearch_name] 
+| search NOT title="splunk_monitoring_console" 
+| rename title as "App Name" 
+| fields splunk_server savedsearch_name user average_run_time max_run_time min_run_time cron_schedule schedule_window is_realtime max_mem_used avg_mem_used "App Name" search 
+| sort splunk_server, -average_run_time

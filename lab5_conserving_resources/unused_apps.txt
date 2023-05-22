@@ -1,0 +1,4 @@
+index=_internal sourcetype=splunkd_ui_access appLogo.png earliest=-30d@d latest=now 
+| rex field=uri "/en-US/splunkd/__raw/servicesNS/[^/]+/(?<app>[^/]+)/static/appLogo.png" 
+| search app=<candidate_app_for_removal> 
+| stats values values(user) as users by app

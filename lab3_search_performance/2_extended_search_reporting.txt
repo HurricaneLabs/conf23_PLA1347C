@@ -1,0 +1,2 @@
+Extended Search Reporting dashboard available here:
+https://github.com/dpaper-splunk/public/blob/master/dashboards/extended_search_reporting.xml

@@ -1,0 +1,2 @@
+Go to this URL:
+https://splunksearch.yourdomain.com/en-US/manager/system/summarization

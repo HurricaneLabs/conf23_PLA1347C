@@ -1,0 +1,52 @@
+| rest "/servicesNS/nobody/-/datamodel/model" splunk_server=local 
+| table title, acceleration 
+| rex field=acceleration "\"enabled\":(?<acceleration_enabled>[^,\"]+)" 
+| rex field=acceleration "\"earliest_time\":\"(?<acceleration_earliest>[^\"]+)" 
+| fillnull acceleration_earliest value="N/A" 
+| rename title as datamodel 
+| fields - acceleration 
+| join type=outer datamodel 
+    [| rest /services/admin/summarization by_tstats="t" splunk_server=local 
+    | eval key=replace(title,(("tstats:DM_" . 'eai:acl.app') . "_"),""), datamodel=replace('summary.id',(("DM_" . 'eai:acl.app') . "_"),"") 
+    | join type=left key 
+        [| rest /services/data/models splunk_server=local 
+        | table title, "acceleration.cron_schedule", "eai:digest" 
+        | rename title as key 
+        | rename "acceleration.cron_schedule" as cron] 
+    | table datamodel, "eai:acl.app", "summary.access_time", "summary.is_inprogress", "summary.size", "summary.latest_time", "summary.complete", "summary.buckets_size", "summary.buckets", cron, "summary.last_error", "summary.time_range", "summary.id", "summary.mod_time", "eai:digest", "summary.earliest_time", "summary.last_sid", "summary.access_count" 
+    | rename "summary.id" as summary_id, "summary.time_range" as retention, "summary.earliest_time" as earliest, "summary.latest_time" as latest, "eai:digest" as digest 
+    | rename "summary.*" as "*", "eai:acl.*" as "*" 
+    | sort datamodel 
+    | rename access_count as "Datamodel_Acceleration.access_count", access_time as "Datamodel_Acceleration.access_time", app as "Datamodel_Acceleration.app", buckets as "Datamodel_Acceleration.buckets", buckets_size as "Datamodel_Acceleration.buckets_size", cron as "Datamodel_Acceleration.cron", complete as "Datamodel_Acceleration.complete", datamodel as "Datamodel_Acceleration.datamodel", digest as "Datamodel_Acceleration.digest", earliest as "Datamodel_Acceleration.earliest", is_inprogress as "Datamodel_Acceleration.is_inprogress", last_error as "Datamodel_Acceleration.last_error", last_sid as "Datamodel_Acceleration.last_sid", latest as "Datamodel_Acceleration.latest", mod_time as "Datamodel_Acceleration.mod_time", retention as "Datamodel_Acceleration.retention", size as "Datamodel_Acceleration.size", summary_id as "Datamodel_Acceleration.summary_id" 
+    | fields + "Datamodel_Acceleration.access_count", "Datamodel_Acceleration.access_time", "Datamodel_Acceleration.app", "Datamodel_Acceleration.buckets", "Datamodel_Acceleration.buckets_size", "Datamodel_Acceleration.cron", "Datamodel_Acceleration.complete", "Datamodel_Acceleration.datamodel", "Datamodel_Acceleration.digest", "Datamodel_Acceleration.earliest", "Datamodel_Acceleration.is_inprogress", "Datamodel_Acceleration.last_error", "Datamodel_Acceleration.last_sid", "Datamodel_Acceleration.latest", "Datamodel_Acceleration.mod_time", "Datamodel_Acceleration.retention", "Datamodel_Acceleration.size", "Datamodel_Acceleration.summary_id" 
+    | rename "Datamodel_Acceleration.*" as "*" 
+    | eval "size(MB)"=round((size / 1048576),1), "retention(days)"=if((retention == 0),"unlimited",round((retention / 86400),1)), "complete(%)"=round((complete * 100),1), "runDuration(s)"=round(runDuration,1) 
+    | sort 100 + datamodel 
+    | table datamodel, "complete(%)", "size(MB)", access_time 
+    | eval datamodel=if((datamodel == "Endpoint.Filesystem"),"Endpoint",datamodel)] 
+| join type=outer datamodel 
+    [| rest "/servicesNS/-/-/configs/conf-savedsearches" splunk_server=local 
+    | search "action.correlationsearch.label"=* 
+    | rename "action.correlationsearch.label" as rule_name 
+    | fields + title, rule_name, "dispatch.earliest_time", "dispatch.latest_time" 
+    | join type=outer title 
+        [| rest "/servicesNS/-/-/configs/conf-savedsearches" splunk_server=local 
+        | fields + title, search, disabled] 
+    | rex field=search max_match=0 "datamodel\\W{1,2}(?<datamodel>\\w+)" 
+    | rex field=search max_match=0 "tstats.*?from datamodel=(?<datamodel>\\w+)" 
+    | eval datamodel2=case(match(search,"src_dest_tstats"),mvappend("Network_Traffic","Intrusion_Detection","Web"),match(search,"(access_tracker 
+    | inactive_account_usage)"),"Authentication",match(search,"malware_operations_tracker"),"Malware",match(search,"(primary_functions 
+    | listeningports 
+    | localprocesses 
+    | services)_tracker"),"Application_State",match(search,"useraccounts_tracker"),"Compute_Inventory") 
+    | eval datamodel=mvappend(datamodel,datamodel2) 
+    | search datamodel=* 
+    | mvexpand datamodel 
+    | eval uses_tstats=if(match(search,".*tstats.*"),"yes","no") 
+    | eval enabled=if((disabled == 0),"Yes","No") 
+    | search enabled=yes 
+    | stats count(rule_name) as correlation_searches_enabled by datamodel 
+    | fillnull correlation_searches_enabled value="0"] 
+| fieldformat access_time=strftime(access_time,"%m/%d/%Y %H:%M:%S") 
+| table datamodel, acceleration_enabled, acceleration_earliest, macro, definition, "complete(%)", "size(MB)", correlation_searches_enabled, access_time 
+| sort -acceleration_enabled definition -complete(%) size(MB)
